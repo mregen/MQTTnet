@@ -4,7 +4,9 @@
 
 #if !WINDOWS_UWP
 using System;
+using System.Buffers;
 using System.IO;
+using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.ExceptionServices;
@@ -92,7 +94,7 @@ namespace MQTTnet.Implementations
                     socket.DualMode = _tcpOptions.DualMode.Value;
                 }
 
-                await socket.ConnectAsync(_tcpOptions.Server, _tcpOptions.GetPort(), cancellationToken).ConfigureAwait(false);
+                await socket.ConnectAsync(_tcpOptions.RemoteEndpoint, cancellationToken).ConfigureAwait(false);
 
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -103,9 +105,11 @@ namespace MQTTnet.Implementations
                     var targetHost = _tcpOptions.TlsOptions.TargetHost;
                     if (string.IsNullOrEmpty(targetHost))
                     {
-                        targetHost = _tcpOptions.Server;
+                        if (_tcpOptions.RemoteEndpoint is DnsEndPoint dns)
+                        {
+                            targetHost = dns.Host;    
+                        }
                     }
-
                     var sslStream = new SslStream(networkStream, false, InternalUserCertificateValidationCallback);
                     try
                     {
@@ -270,6 +274,48 @@ namespace MQTTnet.Implementations
                 // Workaround for: https://github.com/dotnet/corefx/issues/24430
                 using (cancellationToken.Register(_disposeAction))
                 {
+                    await stream.WriteAsync(buffer.Array, buffer.Offset, buffer.Count, cancellationToken).ConfigureAwait(false);
+                }
+#endif
+            }
+            catch (ObjectDisposedException)
+            {
+                throw new MqttCommunicationException("The TCP connection is closed.");
+            }
+            catch (IOException exception)
+            {
+                if (exception.InnerException is SocketException socketException)
+                {
+                    ExceptionDispatchInfo.Capture(socketException).Throw();
+                }
+
+                throw;
+            }
+        }
+
+        public async Task WriteAsync(ReadOnlySequence<byte> buffer, bool isEndOfPacket, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var stream = _stream;
+
+                if (stream == null)
+                {
+                    throw new MqttCommunicationException("The TCP connection is closed.");
+                }
+
+#if NETCOREAPP3_0_OR_GREATER || NETSTANDARD2_1_OR_GREATER
+                foreach (var segment in buffer)
+                {
+                    await stream.WriteAsync(segment, cancellationToken).ConfigureAwait(false);
+                }
+#else
+                // Workaround for: https://github.com/dotnet/corefx/issues/24430
+                using (cancellationToken.Register(_disposeAction))
+                {
+                    // TODO
                     await stream.WriteAsync(buffer.Array, buffer.Offset, buffer.Count, cancellationToken).ConfigureAwait(false);
                 }
 #endif

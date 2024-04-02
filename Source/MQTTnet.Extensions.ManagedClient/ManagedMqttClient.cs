@@ -19,12 +19,14 @@ namespace MQTTnet.Extensions.ManagedClient
 {
     public sealed class ManagedMqttClient : Disposable, IManagedMqttClient
     {
+        readonly AsyncEvent<InterceptingPublishMessageEventArgs> _interceptingPublishMessageEvent = new AsyncEvent<InterceptingPublishMessageEventArgs>();
         readonly AsyncEvent<ApplicationMessageProcessedEventArgs> _applicationMessageProcessedEvent = new AsyncEvent<ApplicationMessageProcessedEventArgs>();
         readonly AsyncEvent<ApplicationMessageSkippedEventArgs> _applicationMessageSkippedEvent = new AsyncEvent<ApplicationMessageSkippedEventArgs>();
         readonly AsyncEvent<ConnectingFailedEventArgs> _connectingFailedEvent = new AsyncEvent<ConnectingFailedEventArgs>();
         readonly AsyncEvent<EventArgs> _connectionStateChangedEvent = new AsyncEvent<EventArgs>();
         readonly AsyncEvent<ManagedProcessFailedEventArgs> _synchronizingSubscriptionsFailedEvent = new AsyncEvent<ManagedProcessFailedEventArgs>();
-        
+        readonly AsyncEvent<SubscriptionsChangedEventArgs> _subscriptionsChangedEvent = new AsyncEvent<SubscriptionsChangedEventArgs>();
+
         readonly MqttNetSourceLogger _logger;
         readonly BlockingQueue<ManagedMqttApplicationMessage> _messageQueue = new BlockingQueue<ManagedMqttApplicationMessage>();
 
@@ -88,6 +90,14 @@ namespace MQTTnet.Extensions.ManagedClient
             remove => _applicationMessageProcessedEvent.RemoveHandler(value);
         }
 
+
+        public event Func<InterceptingPublishMessageEventArgs, Task> InterceptPublishMessageAsync
+        {
+            add => _interceptingPublishMessageEvent.AddHandler(value);
+            remove => _interceptingPublishMessageEvent.RemoveHandler(value);
+        }
+
+
         public event Func<MqttApplicationMessageReceivedEventArgs, Task> ApplicationMessageReceivedAsync
         {
             add => InternalClient.ApplicationMessageReceivedAsync += value;
@@ -122,6 +132,12 @@ namespace MQTTnet.Extensions.ManagedClient
         {
             add => _synchronizingSubscriptionsFailedEvent.AddHandler(value);
             remove => _synchronizingSubscriptionsFailedEvent.RemoveHandler(value);
+        }
+
+        public event Func<SubscriptionsChangedEventArgs, Task> SubscriptionsChangedAsync
+        {
+            add => _subscriptionsChangedEvent.AddHandler(value);
+            remove => _subscriptionsChangedEvent.RemoveHandler(value);
         }
 
         public IMqttClient InternalClient { get; }
@@ -363,6 +379,14 @@ namespace MQTTnet.Extensions.ManagedClient
             }
         }
 
+        async Task HandleSubscriptionsResultAsync(List<MqttClientSubscribeResult> subscribeResults, List<MqttClientUnsubscribeResult> unsubscribeResults)
+        {
+            if (_subscriptionsChangedEvent.HasHandlers)
+            {
+                await _subscriptionsChangedEvent.InvokeAsync(new SubscriptionsChangedEventArgs(subscribeResults, unsubscribeResults)).ConfigureAwait(false);
+            }
+        }
+
         async Task MaintainConnectionAsync(CancellationToken cancellationToken)
         {
             try
@@ -464,19 +488,23 @@ namespace MQTTnet.Extensions.ManagedClient
                 if (_reconnectSubscriptions.Any())
                 {
                     topicFilters = new List<MqttTopicFilter>();
-
+                    List<MqttClientSubscribeResult> subscribeResults;
+                    List<MqttClientUnsubscribeResult> unsubscribeResults;
+                    
                     foreach (var sub in _reconnectSubscriptions)
                     {
                         topicFilters.Add(sub.Value);
 
                         if (topicFilters.Count == Options.MaxTopicFiltersInSubscribeUnsubscribePackets)
                         {
-                            await SendSubscribeUnsubscribe(topicFilters, null).ConfigureAwait(false);
+                            (subscribeResults, unsubscribeResults) = await SendSubscribeUnsubscribe(topicFilters, null).ConfigureAwait(false);
                             topicFilters.Clear();
+                            await HandleSubscriptionsResultAsync(subscribeResults, unsubscribeResults).ConfigureAwait(false);
                         }
                     }
 
-                    await SendSubscribeUnsubscribe(topicFilters, null).ConfigureAwait(false);
+                    (subscribeResults, unsubscribeResults) = await SendSubscribeUnsubscribe(topicFilters, null).ConfigureAwait(false);
+                    await HandleSubscriptionsResultAsync(subscribeResults, unsubscribeResults).ConfigureAwait(false);
                 }
             }
             catch (Exception exception)
@@ -492,6 +520,8 @@ namespace MQTTnet.Extensions.ManagedClient
             while (await _subscriptionsQueuedSignal.WaitAsync(GetRemainingTime(endTime), cancellationToken).ConfigureAwait(false))
             {
                 List<MqttTopicFilter> subscriptions;
+                List<MqttClientSubscribeResult> subscribeResults;
+                List<MqttClientUnsubscribeResult> unsubscribeResults;
                 HashSet<string> unsubscriptions;
 
                 lock (_subscriptions)
@@ -527,12 +557,14 @@ namespace MQTTnet.Extensions.ManagedClient
 
                     if (addedTopicFilters.Count == Options.MaxTopicFiltersInSubscribeUnsubscribePackets)
                     {
-                        await SendSubscribeUnsubscribe(addedTopicFilters, null).ConfigureAwait(false);
+                        (subscribeResults, unsubscribeResults) = await SendSubscribeUnsubscribe(addedTopicFilters, null).ConfigureAwait(false);
                         addedTopicFilters.Clear();
+                        await HandleSubscriptionsResultAsync(subscribeResults, unsubscribeResults).ConfigureAwait(false);
                     }
                 }
 
-                await SendSubscribeUnsubscribe(addedTopicFilters, null).ConfigureAwait(false);
+                (subscribeResults, unsubscribeResults) = await SendSubscribeUnsubscribe(addedTopicFilters, null).ConfigureAwait(false);
+                await HandleSubscriptionsResultAsync(subscribeResults, unsubscribeResults).ConfigureAwait(false);
 
                 var removedTopicFilters = new List<string>();
                 foreach (var unSub in unsubscriptions)
@@ -541,12 +573,14 @@ namespace MQTTnet.Extensions.ManagedClient
 
                     if (removedTopicFilters.Count == Options.MaxTopicFiltersInSubscribeUnsubscribePackets)
                     {
-                        await SendSubscribeUnsubscribe(null, removedTopicFilters).ConfigureAwait(false);
+                        (subscribeResults, unsubscribeResults) = await SendSubscribeUnsubscribe(null, removedTopicFilters).ConfigureAwait(false);
                         removedTopicFilters.Clear();
+                        await HandleSubscriptionsResultAsync(subscribeResults, unsubscribeResults).ConfigureAwait(false);
                     }
                 }
 
-                await SendSubscribeUnsubscribe(null, removedTopicFilters).ConfigureAwait(false);
+                (subscribeResults, unsubscribeResults) = await SendSubscribeUnsubscribe(null, removedTopicFilters).ConfigureAwait(false);
+                await HandleSubscriptionsResultAsync(subscribeResults, unsubscribeResults).ConfigureAwait(false);
             }
         }
 
@@ -579,8 +613,10 @@ namespace MQTTnet.Extensions.ManagedClient
             }
         }
 
-        async Task SendSubscribeUnsubscribe(List<MqttTopicFilter> addedSubscriptions, List<string> removedSubscriptions)
+        async Task<(List<MqttClientSubscribeResult> SubscribeResults, List<MqttClientUnsubscribeResult> UnsubscribeResults)> SendSubscribeUnsubscribe(List<MqttTopicFilter> addedSubscriptions, List<string> removedSubscriptions)
         {
+            var subscribeResults = new List<MqttClientSubscribeResult>();
+            var unsubscribeResults = new List<MqttClientUnsubscribeResult>();
             try
             {
                 if (removedSubscriptions != null && removedSubscriptions.Any())
@@ -592,7 +628,8 @@ namespace MQTTnet.Extensions.ManagedClient
                         unsubscribeOptionsBuilder.WithTopicFilter(removedSubscription);
                     }
 
-                    await InternalClient.UnsubscribeAsync(unsubscribeOptionsBuilder.Build()).ConfigureAwait(false);
+                    var unsubscribeResult = await InternalClient.UnsubscribeAsync(unsubscribeOptionsBuilder.Build()).ConfigureAwait(false);
+                    unsubscribeResults.Add(unsubscribeResult);
 
                     //clear because these worked, maybe the subscribe below will fail, only report those
                     removedSubscriptions.Clear();
@@ -607,13 +644,16 @@ namespace MQTTnet.Extensions.ManagedClient
                         subscribeOptionsBuilder.WithTopicFilter(addedSubscription);
                     }
 
-                    await InternalClient.SubscribeAsync(subscribeOptionsBuilder.Build()).ConfigureAwait(false);
+                    var subscribeResult = await InternalClient.SubscribeAsync(subscribeOptionsBuilder.Build()).ConfigureAwait(false);
+                    subscribeResults.Add(subscribeResult);
                 }
             }
             catch (Exception exception)
             {
                 await HandleSubscriptionExceptionAsync(exception, addedSubscriptions, removedSubscriptions).ConfigureAwait(false);
             }
+
+            return (subscribeResults, unsubscribeResults);
         }
 
         void StartPublishing()
@@ -700,9 +740,20 @@ namespace MQTTnet.Extensions.ManagedClient
         async Task TryPublishQueuedMessageAsync(ManagedMqttApplicationMessage message)
         {
             Exception transmitException = null;
+            bool acceptPublish = true;
             try
             {
-                await InternalClient.PublishAsync(message.ApplicationMessage).ConfigureAwait(false);
+                if (_interceptingPublishMessageEvent.HasHandlers)
+                {
+                    var interceptEventArgs = new InterceptingPublishMessageEventArgs(message);
+                    await _interceptingPublishMessageEvent.InvokeAsync(interceptEventArgs).ConfigureAwait(false);
+                    acceptPublish = interceptEventArgs.AcceptPublish;
+                }
+
+                if (acceptPublish)
+                {
+                    await InternalClient.PublishAsync(message.ApplicationMessage).ConfigureAwait(false);
+                }
 
                 using (await _messageQueueLock.EnterAsync().ConfigureAwait(false)) //lock to avoid conflict with this.PublishAsync
                 {

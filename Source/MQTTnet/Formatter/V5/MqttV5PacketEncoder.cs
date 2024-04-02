@@ -37,11 +37,11 @@ namespace MQTTnet.Formatter.V5
             var remainingLength = (uint)_bufferWriter.Length - 5;
 
             var publishPacket = packet as MqttPublishPacket;
-            var payloadSegment = publishPacket?.PayloadSegment;
+            var payloadSequence = publishPacket?.PayloadSequence;
 
-            if (payloadSegment != null)
+            if (payloadSequence != null)
             {
-                remainingLength += (uint)payloadSegment.Value.Count;
+                remainingLength += (uint)payloadSequence.Value.Length;
             }
 
             var remainingLengthSize = MqttBufferWriter.GetVariableByteIntegerSize(remainingLength);
@@ -57,9 +57,9 @@ namespace MQTTnet.Formatter.V5
             var buffer = _bufferWriter.GetBuffer();
             var firstSegment = new ArraySegment<byte>(buffer, headerOffset, _bufferWriter.Length - headerOffset);
 
-            return payloadSegment == null
+            return payloadSequence == null
                ? new MqttPacketBuffer(firstSegment)
-               : new MqttPacketBuffer(firstSegment, payloadSegment.Value);
+               : new MqttPacketBuffer(firstSegment, payloadSequence.Value);
         }
 
         byte EncodeAuthPacket(MqttAuthPacket packet)
@@ -279,7 +279,7 @@ namespace MQTTnet.Formatter.V5
             _propertiesWriter.WriteReasonString(packet.ReasonString);
             _propertiesWriter.WriteUserProperties(packet.UserProperties);
 
-            if (_bufferWriter.Length > 0 || packet.ReasonCode != MqttPubAckReasonCode.Success)
+            if (_propertiesWriter.Length > 0 || packet.ReasonCode != MqttPubAckReasonCode.Success)
             {
                 _bufferWriter.WriteByte((byte)packet.ReasonCode);
                 _propertiesWriter.WriteTo(_bufferWriter);
@@ -375,7 +375,7 @@ namespace MQTTnet.Formatter.V5
 
             _bufferWriter.WriteTwoByteInteger(packet.PacketIdentifier);
 
-            if (_bufferWriter.Length > 0 || packet.ReasonCode != MqttPubRecReasonCode.Success)
+            if (_propertiesWriter.Length > 0 || packet.ReasonCode != MqttPubRecReasonCode.Success)
             {
                 _bufferWriter.WriteByte((byte)packet.ReasonCode);
                 _propertiesWriter.WriteTo(_bufferWriter);
