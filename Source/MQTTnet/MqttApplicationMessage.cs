@@ -2,16 +2,49 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using MQTTnet.Internal;
+using MQTTnet.Buffers;
 using MQTTnet.Packets;
 using MQTTnet.Protocol;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 
 namespace MQTTnet
 {
-    public sealed class MqttApplicationMessage
+    public sealed class MqttApplicationMessage : IDisposable
     {
+        /// <summary>
+        /// Create a clone of the <see cref="MqttApplicationMessage"/>.
+        /// with a deep copy of the Payload allocated from the heap.
+        /// </summary>
+        public MqttApplicationMessage Clone()
+        {
+            return new MqttApplicationMessage()
+            {
+                ContentType = this.ContentType,
+                CorrelationData = this.CorrelationData,
+                Dup = this.Dup,
+                MessageExpiryInterval = this.MessageExpiryInterval,
+                Payload = this.Payload.Sequence.ToArray(),
+                PayloadFormatIndicator = this.PayloadFormatIndicator,
+                QualityOfServiceLevel = this.QualityOfServiceLevel,
+                ResponseTopic = this.ResponseTopic,
+                Retain = this.Retain,
+                SubscriptionIdentifiers = this.SubscriptionIdentifiers,
+                Topic = this.Topic,
+                TopicAlias = this.TopicAlias,
+                UserProperties = this.UserProperties
+            };
+        }
+
+        /// <summary>
+        ///    Disposes the payload used by the current instance of the <see cref="MqttApplicationMessage" /> class.
+        /// </summary>
+        public void Dispose()
+        {
+            Payload.Dispose();
+        }
+
         /// <summary>
         ///     Gets or sets the content type.
         ///     The content type must be a UTF-8 encoded string. The content type value identifies the kind of UTF-8 encoded
@@ -50,9 +83,9 @@ namespace MQTTnet
         public uint MessageExpiryInterval { get; set; }
 
         /// <summary>
-        /// Get or set ArraySegment style of Payload.
+        ///     Get or set Mqtt Payload owner.
         /// </summary>
-        public ArraySegment<byte> PayloadSegment { get; set; } = EmptyBuffer.ArraySegment;
+        public MqttPayloadOwner<byte> Payload{ get; set; }
 
         /// <summary>
         ///     Gets or sets the payload format indicator.

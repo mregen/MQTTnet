@@ -2,8 +2,10 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using MQTTnet.Buffers;
 using MQTTnet.Diagnostics;
 using MQTTnet.Internal;
+using System.Buffers;
 
 namespace MQTTnet.Server.Internal
 {
@@ -65,8 +67,8 @@ namespace MQTTnet.Server.Internal
 
                 lock (_messages)
                 {
-                    var payloadSegment = applicationMessage.PayloadSegment;
-                    var hasPayload = payloadSegment.Count > 0;
+                    var payload = applicationMessage.Payload;
+                    var hasPayload = payload.Length > 0;
 
                     if (!hasPayload)
                     {
@@ -77,14 +79,15 @@ namespace MQTTnet.Server.Internal
                     {
                         if (!_messages.TryGetValue(applicationMessage.Topic, out var existingMessage))
                         {
-                            _messages[applicationMessage.Topic] = applicationMessage;
+                            _messages[applicationMessage.Topic] = applicationMessage.Clone();
                             saveIsRequired = true;
                         }
                         else
                         {
-                            if (existingMessage.QualityOfServiceLevel != applicationMessage.QualityOfServiceLevel || !SequenceEqual(existingMessage.PayloadSegment, payloadSegment))
+                            if (existingMessage.QualityOfServiceLevel != applicationMessage.QualityOfServiceLevel ||
+                                !MqttMemoryHelper.SequenceEqual(existingMessage.Payload.Sequence, payload.Sequence))
                             {
-                                _messages[applicationMessage.Topic] = applicationMessage;
+                                _messages[applicationMessage.Topic] = applicationMessage.Clone();
                                 saveIsRequired = true;
                             }
                         }
@@ -106,6 +109,8 @@ namespace MQTTnet.Server.Internal
                         await _eventContainer.RetainedMessageChangedEvent.InvokeAsync(eventArgs).ConfigureAwait(false);
                     }
                 }
+
+                applicationMessage.Dispose();
             }
             catch (Exception exception)
             {
@@ -146,11 +151,6 @@ namespace MQTTnet.Server.Internal
             {
                 await _eventContainer.RetainedMessagesClearedEvent.InvokeAsync(EventArgs.Empty).ConfigureAwait(false);
             }
-        }
-
-        static bool SequenceEqual(ArraySegment<byte> source, ArraySegment<byte> target)
-        {
-            return source.AsSpan().SequenceEqual(target);
         }
     }
 }

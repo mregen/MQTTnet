@@ -2,6 +2,7 @@ using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Jobs;
 using MQTTnet.Adapter;
 using MQTTnet.AspNetCore;
+using MQTTnet.Buffers;
 using MQTTnet.Exceptions;
 using MQTTnet.Formatter;
 using MQTTnet.Packets;
@@ -14,7 +15,7 @@ using System.Threading.Tasks;
 
 namespace MQTTnet.Benchmarks
 {
-    [SimpleJob(RuntimeMoniker.Net60)]
+    [SimpleJob(RuntimeMoniker.Net80)]
     [RPlotExporter, RankColumn]
     [MemoryDiagnoser]
     public class ReaderExtensionsBenchmark
@@ -35,8 +36,14 @@ namespace MQTTnet.Benchmarks
 
             var buffer = mqttPacketFormatter.Encode(packet);
             stream = new MemoryStream();
-            stream.Write(buffer.Packet);
-            stream.Write(buffer.Payload);
+            foreach (var segment in buffer.Packet)
+            {
+                stream.Write(segment.Span);
+            }
+            foreach (var segment in buffer.Payload)
+            {
+                stream.Write(segment.Span);
+            }
             mqttPacketFormatter.Cleanup();
         }
 
@@ -172,7 +179,7 @@ namespace MQTTnet.Benchmarks
                 var bodySlice = copy.Slice(0, bodyLength);
                 var buffer = GetMemory(bodySlice).ToArray();
 
-                var receivedMqttPacket = new ReceivedMqttPacket(fixedHeader, new ArraySegment<byte>(buffer, 0, buffer.Length), buffer.Length + 2);
+                using var receivedMqttPacket = new ReceivedMqttPacket(fixedHeader, new ArraySegment<byte>(buffer, 0, buffer.Length), buffer.Length + 2);
 
                 if (formatter.ProtocolVersion == MqttProtocolVersion.Unknown)
                 {

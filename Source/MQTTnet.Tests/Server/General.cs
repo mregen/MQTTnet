@@ -2,20 +2,19 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using MQTTnet.Client;
+using MQTTnet.Internal;
+using MQTTnet.Packets;
+using MQTTnet.Protocol;
+using MQTTnet.Server;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using MQTTnet.Adapter;
-using MQTTnet.Client;
-using MQTTnet.Formatter;
-using MQTTnet.Internal;
-using MQTTnet.Packets;
-using MQTTnet.Protocol;
-using MQTTnet.Server;
 
 namespace MQTTnet.Tests.Server
 {
@@ -306,7 +305,7 @@ namespace MQTTnet.Tests.Server
                 var server = await testEnvironment.StartServer();
                 server.InterceptingPublishAsync += e =>
                 {
-                    e.ApplicationMessage.PayloadSegment = new ArraySegment<byte>(Encoding.ASCII.GetBytes("extended"));
+                    e.ApplicationMessage.Payload = new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes("extended"));
                     return CompletedTask.Instance;
                 };
 
@@ -317,7 +316,7 @@ namespace MQTTnet.Tests.Server
                 var isIntercepted = false;
                 c2.ApplicationMessageReceivedAsync += e =>
                 {
-                    isIntercepted = string.Compare("extended", Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment.ToArray()), StringComparison.Ordinal) == 0;
+                    isIntercepted = string.Compare("extended", Encoding.UTF8.GetString(e.ApplicationMessage.Payload.Sequence), StringComparison.Ordinal) == 0;
                     return CompletedTask.Instance;
                 };
 
@@ -428,7 +427,7 @@ namespace MQTTnet.Tests.Server
                             new MqttApplicationMessage
                             {
                                 Topic = "/test/1",
-                                PayloadSegment = new ArraySegment<byte>(Encoding.UTF8.GetBytes("true")),
+                                Payload = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes("true")),
                                 QualityOfServiceLevel = MqttQualityOfServiceLevel.ExactlyOnce
                             })
                         {
@@ -783,7 +782,7 @@ namespace MQTTnet.Tests.Server
                 var client1 = await testEnvironment.ConnectClient();
                 client1.ApplicationMessageReceivedAsync += e =>
                 {
-                    receivedBody = e.ApplicationMessage.PayloadSegment.ToArray();
+                    receivedBody = e.ApplicationMessage.Payload.Sequence.ToArray();
                     return CompletedTask.Instance;
                 };
 
@@ -1014,7 +1013,7 @@ namespace MQTTnet.Tests.Server
                 await testEnvironment.StartServer();
 
                 var c1 = await testEnvironment.ConnectClient(new MqttClientOptionsBuilder().WithClientId("receiver"));
-                var c1MessageHandler = testEnvironment.CreateApplicationMessageHandler(c1);
+                using var c1MessageHandler = testEnvironment.CreateApplicationMessageHandler(c1);
                 await c1.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(topicFilter).WithQualityOfServiceLevel(filterQualityOfServiceLevel).Build());
 
                 var c2 = await testEnvironment.ConnectClient(new MqttClientOptionsBuilder().WithClientId("sender"));

@@ -3,7 +3,9 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Buffers;
 using System.Linq;
+using MQTTnet.Buffers;
 using MQTTnet.Exceptions;
 using MQTTnet.Packets;
 using MQTTnet.Protocol;
@@ -30,18 +32,18 @@ namespace MQTTnet.Formatter.V5
             }
 
             // Leave enough head space for max header size (fixed + 4 variable remaining length = 5 bytes)
-            _bufferWriter.Reset(5);
-            _bufferWriter.Seek(5);
+            const int ReservedHeaderSize = 5;
+            _bufferWriter.Reset(ReservedHeaderSize);
+            _bufferWriter.Seek(ReservedHeaderSize);
 
             var fixedHeader = EncodePacket(packet);
-            var remainingLength = (uint)_bufferWriter.Length - 5;
+            uint remainingLength = (uint)_bufferWriter.Length - ReservedHeaderSize;
 
-            var publishPacket = packet as MqttPublishPacket;
-            var payloadSegment = publishPacket?.PayloadSegment;
-
-            if (payloadSegment != null)
+            ReadOnlySequence<byte> payload = default;
+            if (packet is MqttPublishPacket publishPacket)
             {
-                remainingLength += (uint)payloadSegment.Value.Count;
+                payload = publishPacket.Payload.Sequence;
+                remainingLength += (uint)payload.Length;
             }
 
             var remainingLengthSize = MqttBufferWriter.GetVariableByteIntegerSize(remainingLength);
@@ -54,12 +56,11 @@ namespace MQTTnet.Formatter.V5
             _bufferWriter.WriteByte(fixedHeader);
             _bufferWriter.WriteVariableByteInteger(remainingLength);
 
-            var buffer = _bufferWriter.GetBuffer();
-            var firstSegment = new ArraySegment<byte>(buffer, headerOffset, _bufferWriter.Length - headerOffset);
+            var firstSegment = new ReadOnlySequence<byte>(_bufferWriter.GetBuffer(), headerOffset, _bufferWriter.Length - headerOffset);
 
-            return payloadSegment == null
+            return payload.Length == 0
                ? new MqttPacketBuffer(firstSegment)
-               : new MqttPacketBuffer(firstSegment, payloadSegment.Value);
+               : new MqttPacketBuffer(firstSegment, payload);
         }
 
         byte EncodeAuthPacket(MqttAuthPacket packet)

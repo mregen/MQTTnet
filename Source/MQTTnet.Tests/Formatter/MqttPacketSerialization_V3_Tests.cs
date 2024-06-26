@@ -2,15 +2,15 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using MQTTnet.Exceptions;
 using MQTTnet.Formatter;
 using MQTTnet.Packets;
 using MQTTnet.Protocol;
+using System.Buffers;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 
 namespace MQTTnet.Tests.Formatter
 {
@@ -77,7 +77,7 @@ namespace MQTTnet.Tests.Formatter
             Assert.AreEqual(false, deserialized.WildcardSubscriptionAvailable);
             Assert.IsNull(deserialized.UserProperties); // Not supported in v3.1.1
         }
-        
+
         [TestMethod]
         public void Serialize_Full_MqttConnAckPacket_V310()
         {
@@ -178,7 +178,7 @@ namespace MQTTnet.Tests.Formatter
             Assert.AreEqual(connectPacket.ClientId, deserialized.ClientId);
             CollectionAssert.AreEqual(null, deserialized.AuthenticationData); // Not supported in v3.1.1
             Assert.AreEqual(null, deserialized.AuthenticationMethod); // Not supported in v3.1.1
-            Assert.AreEqual(connectPacket.CleanSession, deserialized.CleanSession); 
+            Assert.AreEqual(connectPacket.CleanSession, deserialized.CleanSession);
             Assert.AreEqual(0L, deserialized.ReceiveMaximum); // Not supported in v3.1.1
             Assert.AreEqual(connectPacket.WillFlag, deserialized.WillFlag);
             Assert.AreEqual(connectPacket.WillTopic, deserialized.WillTopic);
@@ -298,7 +298,7 @@ namespace MQTTnet.Tests.Formatter
                 PacketIdentifier = 123,
                 Dup = true,
                 Retain = true,
-                PayloadSegment = new ArraySegment<byte>(Encoding.ASCII.GetBytes("Payload")),
+                Payload = new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes("Payload")),
                 QualityOfServiceLevel = MqttQualityOfServiceLevel.AtLeastOnce,
                 Topic = "Topic",
                 ResponseTopic = "/Response",
@@ -322,7 +322,7 @@ namespace MQTTnet.Tests.Formatter
             Assert.AreEqual(publishPacket.PacketIdentifier, deserialized.PacketIdentifier);
             Assert.AreEqual(publishPacket.Dup, deserialized.Dup);
             Assert.AreEqual(publishPacket.Retain, deserialized.Retain);
-            CollectionAssert.AreEqual(publishPacket.PayloadSegment.ToArray(), deserialized.PayloadSegment.ToArray());
+            CollectionAssert.AreEqual(publishPacket.Payload.Sequence.ToArray(), deserialized.Payload.Sequence.ToArray());
             Assert.AreEqual(publishPacket.QualityOfServiceLevel, deserialized.QualityOfServiceLevel);
             Assert.AreEqual(publishPacket.Topic, deserialized.Topic);
             Assert.AreEqual(null, deserialized.ResponseTopic); // Not supported in v3.1.1.
@@ -399,7 +399,7 @@ namespace MQTTnet.Tests.Formatter
             };
 
             var deserialized = MqttPacketSerializationHelper.EncodeAndDecodePacket(subAckPacket, MqttProtocolVersion.V311);
-            
+
             Assert.AreEqual(subAckPacket.PacketIdentifier, deserialized.PacketIdentifier);
             Assert.AreEqual(null, deserialized.ReasonString); // Not supported in v3.1.1
             Assert.AreEqual(subAckPacket.ReasonCodes.Count, deserialized.ReasonCodes.Count);

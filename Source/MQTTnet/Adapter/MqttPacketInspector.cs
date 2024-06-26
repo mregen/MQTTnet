@@ -3,8 +3,10 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Buffers;
 using System.IO;
 using System.Threading.Tasks;
+using MQTTnet.Buffers;
 using MQTTnet.Diagnostics;
 using MQTTnet.Formatter;
 using MQTTnet.Internal;
@@ -62,7 +64,7 @@ public sealed class MqttPacketInspector
 
     public Task EndReceivePacket()
     {
-        if (!_asyncEvent.HasHandlers)
+        if (!_asyncEvent.HasHandlers || _receivedPacketBuffer == null)
         {
             return CompletedTask.Instance;
         }
@@ -73,14 +75,14 @@ public sealed class MqttPacketInspector
         return InspectPacket(buffer, MqttPacketFlowDirection.Inbound);
     }
 
-    public void FillReceiveBuffer(byte[] buffer)
+    public void FillReceiveBuffer(ReadOnlySpan<byte> buffer)
     {
         if (!_asyncEvent.HasHandlers)
         {
             return;
         }
 
-        _receivedPacketBuffer?.Write(buffer, 0, buffer.Length);
+        _receivedPacketBuffer?.Write(buffer);
     }
 
     async Task InspectPacket(byte[] buffer, MqttPacketFlowDirection direction)

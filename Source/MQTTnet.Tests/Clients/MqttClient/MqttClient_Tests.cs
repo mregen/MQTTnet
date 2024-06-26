@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -297,7 +298,7 @@ namespace MQTTnet.Tests.Clients.MqttClient
 
                 Assert.IsNotNull(receivedMessage);
                 Assert.AreEqual("A", receivedMessage.Topic);
-                Assert.AreEqual(null, receivedMessage.PayloadSegment.Array);
+                Assert.AreEqual(0, receivedMessage.Payload.Length);
             }
         }
 
@@ -508,7 +509,7 @@ namespace MQTTnet.Tests.Clients.MqttClient
 
                 client2.ApplicationMessageReceivedAsync += e =>
                 {
-                    client2TopicResults.Add(Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment.ToArray()));
+                    client2TopicResults.Add(Encoding.UTF8.GetString(e.ApplicationMessage.Payload.Sequence));
                     return CompletedTask.Instance;
                 };
 
@@ -869,7 +870,7 @@ namespace MQTTnet.Tests.Clients.MqttClient
                 {
                     lock (receivedMessages)
                     {
-                        receivedMessages.Add(e.ApplicationMessage);
+                        receivedMessages.Add(e.TransferApplicationMessageOwnership(true));
                     }
 
                     return CompletedTask.Instance;
