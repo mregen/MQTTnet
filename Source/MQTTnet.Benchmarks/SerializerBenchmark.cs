@@ -14,10 +14,12 @@ using MQTTnet.Formatter;
 using MQTTnet.Formatter.V3;
 using BenchmarkDotNet.Jobs;
 using MQTTnet.Diagnostics;
+using System.Buffers;
+using MQTTnet.Buffers;
 
 namespace MQTTnet.Benchmarks
 {
-    [SimpleJob(RuntimeMoniker.Net60)]
+    [SimpleJob(RuntimeMoniker.Net80)]
     [RPlotExporter]
     [MemoryDiagnoser]
     public class SerializerBenchmark : BaseBenchmark
@@ -104,7 +106,7 @@ namespace MQTTnet.Benchmarks
                 return Task.FromResult(count);
             }
 
-            public Task WriteAsync(ArraySegment<byte> buffer, bool isEndOfPacket, CancellationToken cancellationToken)
+            public Task WriteAsync(ReadOnlySequence<byte> buffer, bool isEndOfPacket, CancellationToken cancellationToken)
             {
                 throw new NotSupportedException();
             }

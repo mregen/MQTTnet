@@ -3,8 +3,10 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using MQTTnet.Adapter;
+using MQTTnet.Buffers;
 using MQTTnet.Exceptions;
 using MQTTnet.Packets;
 using MQTTnet.Protocol;
@@ -470,7 +472,6 @@ namespace MQTTnet.Formatter.V5
             return packet;
         }
 
-
         MqttPacket DecodePublishPacket(byte header, ArraySegment<byte> body)
         {
             ThrowIfBodyIsEmpty(body);
@@ -540,7 +541,8 @@ namespace MQTTnet.Formatter.V5
 
             if (!_bufferReader.EndOfStream)
             {
-                packet.PayloadSegment = new ArraySegment<byte>(_bufferReader.ReadRemainingData());
+                IMemoryOwner<byte> payloadOwner = _bufferReader.ReadPayload();
+                packet.Payload = new MqttPayloadOwner<byte>(payloadOwner.Memory, payloadOwner);
             }
 
             return packet;

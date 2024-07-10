@@ -43,7 +43,7 @@ public static class ReaderExtensions
             return false;
         }
 
-        var fixedHeader = copy.First.Span[0];
+        var fixedHeader = copy.FirstSpan[0];
         copy = copy.Slice(headerLength);
         if (copy.Length < bodyLength)
         {
@@ -53,7 +53,7 @@ public static class ReaderExtensions
         var bodySlice = copy.Slice(0, bodyLength);
         var bodySegment = GetArraySegment(ref bodySlice);
 
-        var receivedMqttPacket = new ReceivedMqttPacket(fixedHeader, bodySegment, headerLength + bodyLength);
+        using var receivedMqttPacket = new ReceivedMqttPacket(fixedHeader, bodySegment, headerLength + bodyLength);
         if (formatter.ProtocolVersion == MqttProtocolVersion.Unknown)
         {
             formatter.DetectProtocolVersion(receivedMqttPacket);

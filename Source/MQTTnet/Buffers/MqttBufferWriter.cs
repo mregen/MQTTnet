@@ -2,14 +2,13 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using MQTTnet.Exceptions;
+using MQTTnet.Protocol;
 using System;
 using System.Runtime.CompilerServices;
 using System.Text;
-using MQTTnet.Exceptions;
-using MQTTnet.Internal;
-using MQTTnet.Protocol;
 
-namespace MQTTnet.Formatter
+namespace MQTTnet.Buffers
 {
     /// <summary>
     ///     This is a custom implementation of a memory stream which provides only MQTTnet relevant features.
@@ -181,9 +180,9 @@ namespace MQTTnet.Formatter
                 // UTF8 chars can have a max length of 4 and the used buffer increase *2 every time.
                 // So the buffer should always have much more capacity left so that a correct value
                 // here is only waste of CPU cycles.
-                var byteCount = value.Length * 4;
+                var maxByteCount = Encoding.UTF8.GetMaxByteCount(value.Length);
 
-                EnsureAdditionalCapacity(byteCount + 2);
+                EnsureAdditionalCapacity(maxByteCount + 2);
 
                 var writtenBytes = Encoding.UTF8.GetBytes(value, 0, value.Length, _buffer, _position + 2);
 

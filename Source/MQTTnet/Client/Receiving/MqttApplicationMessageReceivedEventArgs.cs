@@ -28,7 +28,33 @@ public sealed class MqttApplicationMessageReceivedEventArgs : EventArgs
         _acknowledgeHandler = acknowledgeHandler;
     }
 
-    public MqttApplicationMessage ApplicationMessage { get; }
+    /// <summary>
+    ///     The invoked message receiver can take ownership of the application
+    ///     message with payload to avoid cloning.
+    ///     It is then the obligation of the new owner to dispose the obtained
+    ///     application message.
+    /// </summary>
+    /// <param name="clonePayload">
+    ///     If set to true, clones the ApplicationMessage and copies the payload.
+    /// </param>
+    public MqttApplicationMessage TransferApplicationMessageOwnership(bool clonePayload)
+    {
+        DisposeApplicationMessage = false;
+        if (clonePayload)
+        {
+            var applicationMessage = ApplicationMessage;
+            // replace application message with a clone
+            // if the payload is owner managed
+            if (applicationMessage?.Payload.Owner != null)
+            {
+                ApplicationMessage = applicationMessage.Clone();
+                applicationMessage.Dispose();
+            }
+        }
+        return ApplicationMessage;
+    }
+
+    public MqttApplicationMessage ApplicationMessage { get; private set; }
 
     /// <summary>
     ///     Gets or sets whether the library should send MQTT ACK packets automatically if required.
@@ -40,6 +66,15 @@ public sealed class MqttApplicationMessageReceivedEventArgs : EventArgs
     ///     Hint: This identifier needs to be unique over all used clients / devices on the broker to avoid connection issues.
     /// </summary>
     public string ClientId { get; }
+
+    /// <summary>
+    ///     Gets or sets whether the ownership of the message payload 
+    ///     was handed over to the invoked code. This value determines
+    ///     if the payload can be disposed after the callback returns.
+    ///     If transferred, the new owner of the message is responsible
+    ///     to dispose the payload after processing.
+    /// </summary>
+    public bool DisposeApplicationMessage { get; private set; } = true;
 
     /// <summary>
     ///     Gets or sets whether this message was handled.

@@ -2,65 +2,79 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using MQTTnet.Buffers;
 using System;
-using System.Linq;
-using MQTTnet.Implementations;
-using MQTTnet.Internal;
+using System.Buffers;
 
 namespace MQTTnet.Formatter
 {
     public readonly struct MqttPacketBuffer
     {
-        static readonly ArraySegment<byte> EmptyPayload = EmptyBuffer.ArraySegment;
-        
-        public MqttPacketBuffer(ArraySegment<byte> packet, ArraySegment<byte> payload)
+        public MqttPacketBuffer(ReadOnlySequence<byte> packet, ReadOnlySequence<byte> payload = default)
         {
             Packet = packet;
             Payload = payload;
 
-            Length = Packet.Count + Payload.Count;
+            if (Packet.Length + Payload.Length > int.MaxValue)
+            {
+                throw new InvalidOperationException("The packet is too large.");
+            }
+
+            Length = (int)Packet.Length + (int)Payload.Length;
         }
-        
+
         public MqttPacketBuffer(ArraySegment<byte> packet)
         {
-            Packet = packet;
-            Payload = EmptyPayload;
+            Packet = new ReadOnlySequence<byte>(packet);
+            Payload = ReadOnlySequence<byte>.Empty;
 
-            Length = Packet.Count;
+            if (Packet.Length > int.MaxValue)
+            {
+                throw new InvalidOperationException("The packet is too large.");
+            }
+
+            Length = (int)Packet.Length;
+        }
+
+        public MqttPacketBuffer(ReadOnlySequence<byte> packet) : this(packet, ReadOnlySequence<byte>.Empty)
+        {
         }
 
         public int Length { get; }
-        
-        public ArraySegment<byte> Packet { get; }
-        
-        public ArraySegment<byte> Payload { get; }
+
+        public ReadOnlySequence<byte> Packet { get; }
+
+        public ReadOnlySequence<byte> Payload { get; }
 
         public byte[] ToArray()
         {
-            if (Payload.Count == 0)
+            var buffer = GC.AllocateUninitializedArray<byte>(Length);
+            int packetLength = (int)Packet.Length;
+            MqttMemoryHelper.Copy(Packet, 0, buffer, 0, packetLength);
+            if (Payload.Length > 0)
             {
-                return Packet.ToArray();
+                int payloadLength = (int)Payload.Length;
+                MqttMemoryHelper.Copy(Payload, 0, buffer, packetLength, payloadLength);
             }
-
-            var buffer = new byte[Length];
-            MqttMemoryHelper.Copy(Packet.Array, Packet.Offset, buffer, 0, Packet.Count);
-            MqttMemoryHelper.Copy(Payload.Array, Payload.Offset, buffer, Packet.Count, Payload.Count);
-
             return buffer;
         }
-        
+
+        public IMemoryOwner<byte> ToMemoryOwner()
+        {
+            var memoryOwner = MemoryPool<byte>.Shared.Rent(Length);
+            int packetLength = (int)Packet.Length;
+            MqttMemoryHelper.Copy(Packet, 0, memoryOwner.Memory, 0, packetLength);
+            if (Payload.Length > 0)
+            {
+                int payloadLength = (int)Payload.Length;
+                MqttMemoryHelper.Copy(Payload, 0, memoryOwner.Memory, packetLength, payloadLength);
+            }
+            return memoryOwner;
+        }
+
         public ArraySegment<byte> Join()
         {
-            if (Payload.Count == 0)
-            {
-                return Packet;
-            }
-
-            var buffer = new byte[Length];
-            MqttMemoryHelper.Copy(Packet.Array, Packet.Offset, buffer, 0, Packet.Count);
-            MqttMemoryHelper.Copy(Payload.Array, Payload.Offset, buffer, Packet.Count, Payload.Count);
-
-            return new ArraySegment<byte>(buffer);
+            return new ArraySegment<byte>(ToArray());
         }
     }
 }

@@ -203,11 +203,11 @@ public sealed class MqttConnectionContext : IMqttChannelAdapter
             {
                 var buffer = PacketFormatterAdapter.Encode(packet);
 
-                if (buffer.Payload.Count == 0)
+                if (buffer.Packet.IsSingleSegment && buffer.Payload.Length == 0)
                 {
                     // zero copy
                     // https://github.com/dotnet/runtime/blob/e31ddfdc4f574b26231233dc10c9a9c402f40590/src/libraries/System.IO.Pipelines/src/System/IO/Pipelines/StreamPipeWriter.cs#L279
-                    await _output.WriteAsync(buffer.Packet, cancellationToken).ConfigureAwait(false);
+                    await _output.WriteAsync(buffer.Packet.First, cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
@@ -231,8 +231,18 @@ public sealed class MqttConnectionContext : IMqttChannelAdapter
 
         var span = output.GetSpan(buffer.Length);
 
-        buffer.Packet.AsSpan().CopyTo(span);
-        buffer.Payload.AsSpan().CopyTo(span.Slice(buffer.Packet.Count));
+        int offset = 0;
+        foreach (var segment in buffer.Packet)
+        {
+            segment.Span.CopyTo(span.Slice(offset));
+            offset += segment.Length;
+        }
+
+        foreach (var segment in buffer.Payload)
+        {
+            segment.Span.CopyTo(span.Slice(offset));
+            offset += segment.Length;
+        }
 
         output.Advance(buffer.Length);
     }

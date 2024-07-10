@@ -2,13 +2,15 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using System;
-using System.Collections.Generic;
+using MQTTnet.Buffers;
 using MQTTnet.Protocol;
+using System;
+using System.Buffers;
+using System.Collections.Generic;
 
 namespace MQTTnet.Packets;
 
-public sealed class MqttPublishPacket : MqttPacketWithIdentifier
+public class MqttPublishPacket : MqttPacketWithIdentifier
 {
     public string ContentType { get; set; }
 
@@ -20,7 +22,7 @@ public sealed class MqttPublishPacket : MqttPacketWithIdentifier
 
     public MqttPayloadFormatIndicator PayloadFormatIndicator { get; set; } = MqttPayloadFormatIndicator.Unspecified;
 
-    public ArraySegment<byte> PayloadSegment { get; set; }
+    public MqttPayloadOwner<byte> Payload { get; set; }
 
     public MqttQualityOfServiceLevel QualityOfServiceLevel { get; set; } = MqttQualityOfServiceLevel.AtMostOnce;
 
@@ -39,6 +41,6 @@ public sealed class MqttPublishPacket : MqttPacketWithIdentifier
     public override string ToString()
     {
         return
-            $"Publish: [Topic={Topic}] [PayloadLength={PayloadSegment.Count}] [QoSLevel={QualityOfServiceLevel}] [Dup={Dup}] [Retain={Retain}] [PacketIdentifier={PacketIdentifier}]";
+            $"Publish: [Topic={Topic}] [PayloadLength={Payload.Length}] [QoSLevel={QualityOfServiceLevel}] [Dup={Dup}] [Retain={Retain}] [PacketIdentifier={PacketIdentifier}]";
     }
 }
